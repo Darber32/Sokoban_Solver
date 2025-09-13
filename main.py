@@ -1,5 +1,5 @@
 import pygame
-import copy
+import os
 from queue import Queue, LifoQueue
 
 class State:
@@ -31,13 +31,27 @@ class Game:
         self.width = 800
         self.height = 800
         self.surface = pygame.display.set_mode((self.width, self.height))
-        self.surface.fill((62, 180, 137))
+
         self.maps = list()
         self.map_rows = 0
         self.map_cols = 0
+
         self.block_size = 60
-        self.font = pygame.font.Font(None, self.block_size)
-        self.status = 'search'
+        self.font = pygame.font.SysFont("Arial", self.block_size)
+        self.stats_font = pygame.font.SysFont("Arial", self.block_size // 2)
+
+        self.status = 'menu'
+        self.levels = [os.path.splitext(f)[0] for f in os.listdir('Levels') if f.endswith('.txt')]
+        self.selected_level = None
+        self.structure_type = 'stack'
+        self.level_index = 0
+
+        self.iteration_count = 0
+        self.O_max_node_count = 0
+        self.O_end_node_count = 0
+        self.max_node_count = 0
+
+        self.clock = pygame.time.Clock()
         pygame.display.flip()
 
     def __del__(self):
@@ -49,13 +63,32 @@ class Game:
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:
                     is_active = False
+                elif e.type == pygame.KEYDOWN:
+                    if e.key == pygame.K_UP and self.status == 'menu':
+                        self.level_index = (self.level_index - 1) % len(self.levels)
+                    elif e.key == pygame.K_DOWN and self.status == 'menu':
+                        self.level_index = (self.level_index + 1) % len(self.levels)
+                    elif e.key == pygame.K_SPACE and self.status == 'menu':
+                        self.structure_type = 'queue' if self.structure_type == 'stack' else 'stack'
+                    elif e.key == pygame.K_RETURN:
+                        if self.status == 'menu':
+                            self.selected_level = self.levels[self.level_index] + '.txt'
+                            self.status = 'search'
+                        elif self.status == 'stop':
+                            self.status = 'stats'
+                        elif self.status == 'stats' or self.status == 'error':
+                            self.status = 'menu'
+                    
             
             match self.status:
+                case 'menu':
+                    self.Draw_Menu()
                 case 'search':
-                    self.maps = self.Find_Solution('level №3.txt', 'stack')
+                    self.maps = self.Find_Solution(self.selected_level, self.structure_type)
                     if self.maps == None:
-                        print('решение не найдено')
-                    self.status = 'show'
+                        self.status = 'error'
+                    else:
+                        self.status = 'show'
 
                 case 'show':
                     map = self.maps.pop()
@@ -67,9 +100,20 @@ class Game:
                 case 'stop':
                     pass
 
-            pygame.display.update()
+                case 'stats':
+                    self.Draw_Stats()
+
+                case 'error':
+                    self.Draw_Error()
+
+            pygame.display.flip()
+            self.clock.tick(60)
 
     def Find_Solution(self, level_name, structure_type):
+        self.iteration_count = 0
+        self.O_max_node_count = 0
+        self.O_end_node_count = 0
+        self.max_node_count = 0
         map_file = open('Levels/' + level_name, 'r') 
         start_map = map_file.read().split(sep='\n')
         map_file.close()
@@ -96,9 +140,11 @@ class Game:
         directions = ['up', 'down', 'right', 'left']
 
         while not O.empty():
+            self.iteration_count += 1
             state = O.get()
             map = state.map
             if state == final_state:
+                self.O_end_node_count = O.qsize()
                 maps = list()
                 while state.prev_state != None:
                     maps.append(state.map)
@@ -123,6 +169,9 @@ class Game:
                     if not new_state in C:
                         O.put(new_state)
                         C.add(new_state)
+                        O_size = O.qsize()
+                        self.max_node_count = max(self.max_node_count, len(C) + O_size)
+                        self.O_max_node_count = max(self.O_max_node_count, O_size)
         return None
     
     def Check_Direction(self, direction, map, x, y):
@@ -175,6 +224,7 @@ class Game:
         return new_map
 
     def Draw_Map(self, map):
+        self.surface.fill((62, 180, 137))
         start_x = self.width // 2 - self.map_cols * self.block_size // 2 
         start_y = self.height // 2 - self.map_rows * self.block_size // 2 
         for row in range(self.map_rows):
@@ -208,6 +258,48 @@ class Game:
                     case '+':
                         pygame.draw.rect(self.surface, (241, 221, 215), [x, y, self.block_size, self.block_size])
                         pygame.draw.rect(self.surface, (50, 50, 50), [x, y, self.block_size, self.block_size], 1)
+
+    def Draw_Menu(self):
+        self.surface.fill((62, 180, 137))
+        center_x = self.width // 2
+
+        level = self.font.render(self.levels[self.level_index], True, (0, 0, 0))
+        level_rect = level.get_rect(center=(center_x, self.height // 3))
+        self.surface.blit(level, level_rect)
+
+        algo_text = self.font.render(f"Алгоритм: {self.structure_type}", True, (0, 0, 0))
+        algo_rect = algo_text.get_rect(center=(center_x, self.height // 3 * 2))
+        self.surface.blit(algo_text, algo_rect)
+
+    def Draw_Stats(self):
+        self.surface.fill((62, 180, 137))
+        center_x = self.width // 2
+        algo_type = 'Поиск в ширину' if self.structure_type == 'queue' else 'Поиск в глубину'
+
+        lines = [
+            f"Алгоритм: {algo_type}",
+            f"Количество итераций: {self.iteration_count}",
+            f"Максимальное количество узлов в O: {self.O_max_node_count}",
+            f"Конечное количество узлов в O: {self.O_end_node_count}",
+            f"Максимальное количество узлов в памяти: {self.max_node_count}"
+        ]
+
+        start_y = self.height // 6
+        line_spacing = self.height // 12
+
+        for i, text in enumerate(lines):
+            rendered = self.stats_font.render(text, True, (0, 0, 0))
+            rect = rendered.get_rect(center=(center_x, start_y + i * line_spacing))
+            self.surface.blit(rendered, rect)
+
+    def Draw_Error(self):
+        self.surface.fill((62, 180, 137))
+        center_x = self.width // 2
+        center_y = self.height // 2
+        error = self.font.render('Не удалось найти решение', True, (0, 0, 0))
+        error_rect = error.get_rect(center=(center_x, center_y))
+        self.surface.blit(error, error_rect)
+
 
 game = Game()
 game.Start()
