@@ -3,25 +3,18 @@ import os
 from queue import Queue, LifoQueue
 
 class State:
-    def __init__(self, map, prev_state = None):
-        self.map = tuple(tuple(row) for row in map)
-        self.rows_count = len(self.map)
-        self.cols_count = len(self.map[0])
+    def __init__(self, player_pos, boxes, prev_state = None):
+        self.player = player_pos
+        self.boxes = frozenset(boxes)
         self.prev_state = prev_state
-    
-    def __eq__(self, __o: object) -> bool:
-        if __o == None:
-            return False
-        for row in range(self.rows_count):
-            for col in range(self.cols_count):
-                if self.map[row][col] !=  __o.map[row][col]:
-                    if self.map[row][col] == '@' and __o.map[row][col] == '.':
-                        continue
-                    return False
-        return True
 
-    def __hash__(self) -> int:
-        return hash(tuple(self.map))
+    def __eq__(self, other):
+        if other is None:
+            return False
+        return self.player == other.player and self.boxes == other.boxes
+
+    def __hash__(self):
+        return hash((self.player, self.boxes))
 
 class Game:
     def __init__(self):
@@ -35,6 +28,8 @@ class Game:
         self.maps = list()
         self.map_rows = 0
         self.map_cols = 0
+        self.map = list()
+        self.goals = set()
 
         self.block_size = 60
         self.font = pygame.font.SysFont("Arial", self.block_size)
@@ -78,13 +73,17 @@ class Game:
                         elif self.status == 'stop':
                             self.status = 'stats'
                         elif self.status == 'stats' or self.status == 'error':
-                            self.status = 'menu'
-                    
+                            self.status = 'menu'      
             
             match self.status:
                 case 'menu':
                     self.Draw_Menu()
                 case 'search':
+                    self.iteration_count = 0
+                    self.O_max_node_count = 0
+                    self.O_end_node_count = 0
+                    self.max_node_count = 0
+                    self.steps_counter = 0
                     self.maps = self.Find_Solution(self.selected_level, self.structure_type)
                     if self.maps == None:
                         self.status = 'error'
@@ -111,12 +110,6 @@ class Game:
             self.clock.tick(60)
 
     def Find_Solution(self, level_name, structure_type):
-        self.iteration_count = 0
-        self.O_max_node_count = 0
-        self.O_end_node_count = 0
-        self.max_node_count = 0
-        self.steps_counter = 0
-
         map_file = open('Levels/' + level_name, 'r') 
         start_map = map_file.read().split(sep='\n')
         map_file.close()
@@ -124,20 +117,45 @@ class Game:
         self.map_cols = len(start_map[0])
         for i in range(self.map_rows):
             start_map[i] = list(start_map[i])
+
+        player = None
+        boxes = list()
+        self.map.clear()
+        for y in range(self.map_rows):
+            row = list()
+            for x in range(self.map_cols):
+                if start_map[y][x] == '@':
+                    player = (x, y)
+                    row.append('.')
+                elif start_map[y][x] == '*':
+                    player = (x, y)
+                    row.append('X')
+                elif start_map[y][x] == 'B':
+                    boxes.append((x, y))
+                    row.append('.')
+                elif start_map[y][x] == '+':
+                    boxes.append((x, y))
+                    row.append('X')
+                else:
+                    row.append(start_map[y][x])
+            self.map.append(row)
+        start_state = State(player, boxes)
         
         final_state_file = open('Levels/Final States/' + level_name, 'r')
         final_map = final_state_file.read().split(sep='\n')
         final_state_file.close()
-        for i in range(self.map_rows):
-            final_map[i] = list(final_map[i])
-        final_state = State(final_map)
+        
+        self.goals.clear()
+        for y in range(self.map_rows):
+            for x in range(self.map_cols):
+                if final_map[y][x] == '+':
+                    self.goals.add((x, y))
 
         match structure_type:
             case 'stack':
                 O = LifoQueue()
             case 'queue':
                 O = Queue()
-        start_state = State(start_map)
         O.put(start_state)
         C = {start_state}
         directions = ['up', 'down', 'right', 'left']
@@ -145,40 +163,31 @@ class Game:
         while not O.empty():
             self.iteration_count += 1
             state = O.get()
-            map = state.map
-            if state == final_state:
+            if state.boxes == self.goals:
                 self.O_end_node_count = O.qsize()
                 maps = list()
                 while state.prev_state != None:
                     self.steps_counter += 1
-                    maps.append(state.map)
+                    map = self.Create_Map(state)
+                    maps.append(map)
                     state = state.prev_state
-                maps.append(state.map)
+                map = self.Create_Map(state)
+                maps.append(map)
                 return maps
-            x, y = 0, 0
-            for row in range(self.map_rows):
-                if '@' in map[row]:
-                    y = row
-                    x = map[row].index('@')
-                    break
-                elif '*' in map[row]:
-                    y = row
-                    x = map[row].index('*')
-                    break
 
             for direction in directions:
-                new_map = self.Check_Direction(direction, map, x, y)
-                if new_map != None:
-                    new_state = State(new_map, state)
+                new_state = self.Check_Direction(direction, state)
+                if new_state != None:
                     if not new_state in C:
                         O.put(new_state)
                         C.add(new_state)
                         O_size = O.qsize()
                         self.max_node_count = max(self.max_node_count, len(C) + O_size)
                         self.O_max_node_count = max(self.O_max_node_count, O_size)
+                        
         return None
-    
-    def Check_Direction(self, direction, map, x, y):
+
+    def Check_Direction(self, direction, state):
         delta = {
             'up':    (0, -1),
             'down':  (0,  1),
@@ -186,46 +195,43 @@ class Game:
             'right': (1,  0)
         }
         dx, dy = delta[direction]
-        new_map = [list(row) for row in map]
-        nx, ny = x + dx, y + dy       
-        nnx, nny = x + 2*dx, y + 2*dy
+        x, y = state.player
+        nx, ny = x + dx, y + dy 
 
         if not (0 <= nx < self.map_cols and 0 <= ny < self.map_rows):
             return None
 
-        target = new_map[ny][nx]
-        if target == '#':
+        if self.map[ny][nx] == '#':
             return None
 
-        if target in ['B', '+']:
+        boxes = set(state.boxes)
+        if (nx, ny) in boxes:
+            nnx, nny = nx + dx, ny + dy
             if not (0 <= nnx < self.map_cols and 0 <= nny < self.map_rows):
                 return None
-            behind = new_map[nny][nnx]
-            if behind in ['#', 'B', '+']: 
+            if self.map[nny][nnx] == '#' or (nnx, nny) in boxes:
                 return None
+            boxes.remove((nx, ny))
+            boxes.add((nnx, nny))
 
-            if behind == 'X':  
-                new_map[nny][nnx] = '+'
+        return State((nx, ny), boxes, state)
+
+    def Create_Map(self, state):
+        map = [list(row) for row in self.map]
+        x, y = state.player
+        if map[y][x] == '.':
+            map[y][x] = '@'
+        else:
+            map[y][x] = '*'
+
+        for box in state.boxes:
+            x, y = box
+            if map[y][x] == '.':
+                map[y][x] = 'B'
             else:
-                new_map[nny][nnx] = 'B'
+                map[y][x] = '+'
 
-            if target == 'B':
-                new_map[ny][nx] = '.'
-            elif target == '+':
-                new_map[ny][nx] = 'X'
-            target = new_map[ny][nx]
-
-        if target == '.':
-            new_map[ny][nx] = '@'
-        elif target == 'X':
-            new_map[ny][nx] = '*'
-
-        if new_map[y][x] == '@':
-            new_map[y][x] = '.'
-        elif new_map[y][x] == '*':
-            new_map[y][x] = 'X'
-
-        return new_map
+        return map
 
     def Draw_Map(self, map):
         self.surface.fill((62, 180, 137))
