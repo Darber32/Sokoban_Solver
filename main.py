@@ -50,6 +50,7 @@ class Game:
         self.O_max_node_count = 0
         self.O_end_node_count = 0
         self.max_node_count = 0
+        self.steps_counter = 0
 
         self.clock = pygame.time.Clock()
         pygame.display.flip()
@@ -114,6 +115,8 @@ class Game:
         self.O_max_node_count = 0
         self.O_end_node_count = 0
         self.max_node_count = 0
+        self.steps_counter = 0
+
         map_file = open('Levels/' + level_name, 'r') 
         start_map = map_file.read().split(sep='\n')
         map_file.close()
@@ -147,6 +150,7 @@ class Game:
                 self.O_end_node_count = O.qsize()
                 maps = list()
                 while state.prev_state != None:
+                    self.steps_counter += 1
                     maps.append(state.map)
                     state = state.prev_state
                 maps.append(state.map)
@@ -281,7 +285,8 @@ class Game:
             f"Количество итераций: {self.iteration_count}",
             f"Максимальное количество узлов в O: {self.O_max_node_count}",
             f"Конечное количество узлов в O: {self.O_end_node_count}",
-            f"Максимальное количество узлов в памяти: {self.max_node_count}"
+            f"Максимальное количество узлов в памяти: {self.max_node_count}",
+            f"Количество шагов: {self.steps_counter}"
         ]
 
         start_y = self.height // 6
