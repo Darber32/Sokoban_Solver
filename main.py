@@ -29,7 +29,6 @@ class Game:
         self.map_rows = 0
         self.map_cols = 0
         self.map = list()
-        self.goals = set()
 
         self.block_size = 60
         self.font = pygame.font.SysFont("Arial", self.block_size)
@@ -95,7 +94,7 @@ class Game:
                     self.Draw_Map(map)
                     if len(self.maps) == 0:
                         self.status = 'stop'
-                    pygame.time.delay(250)
+                    pygame.time.delay(200)
 
                 case 'stop':
                     pass
@@ -144,12 +143,15 @@ class Game:
         final_state_file = open('Levels/Final States/' + level_name, 'r')
         final_map = final_state_file.read().split(sep='\n')
         final_state_file.close()
-        
-        self.goals.clear()
+        final_player = None
+        final_boxes = list()
         for y in range(self.map_rows):
             for x in range(self.map_cols):
-                if final_map[y][x] == '+':
-                    self.goals.add((x, y))
+                if final_map[y][x] == '@':
+                    final_player = (x, y)
+                elif final_map[y][x] == '+':
+                    final_boxes.append((x, y))
+        final_state = State(final_player, final_boxes)
 
         match structure_type:
             case 'stack':
@@ -163,7 +165,7 @@ class Game:
         while not O.empty():
             self.iteration_count += 1
             state = O.get()
-            if state.boxes == self.goals:
+            if state == final_state:
                 self.O_end_node_count = O.qsize()
                 maps = list()
                 while state.prev_state != None:
