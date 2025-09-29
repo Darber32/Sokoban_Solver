@@ -286,7 +286,6 @@ class Game:
 
         return None
 
-
     def Bidirectional_Search(self, level_name):
         map_file = open('Levels/' + level_name, 'r') 
         start_map = map_file.read().split(sep='\n')
@@ -374,8 +373,8 @@ class Game:
                     return self.Connect_Ways(second_state, state)
 
                 for direction in directions:
-                    new_state = self.Check_Direction_Backwards(direction, state)
-                    if new_state != None:
+                    new_states = self.Check_Direction_Backwards(direction, state)
+                    for new_state in new_states:
                         if not new_state in C_final:
                             O_final.put(new_state)
                             C_final.add(new_state)
@@ -386,28 +385,24 @@ class Game:
         return None
 
     def Connect_Ways(self, state_start_end, state_final_end):
-        flipper = LifoQueue()
-        while state_final_end.prev_state != None:
-            flipper.put(state_final_end)
-            state_final_end = state_final_end.prev_state
-        flipper.put(state_final_end)
-         
-        maps = list()
-        while not flipper.empty():
-            self.steps_counter += 1
-            state = flipper.get()
-            map = self.Create_Map(state)
-            maps.append(map)
-
-        state = state_start_end.prev_state 
-        while state.prev_state != None:
-            self.steps_counter += 1
-            map = self.Create_Map(state)
-            maps.append(map)
+        path = list()
+        state = state_final_end
+        while state is not None:
+            path.append(state)
             state = state.prev_state
-        map = self.Create_Map(state)
-        maps.append(map)
+        path.reverse()
+
+        state = state_start_end.prev_state
+        while state is not None:
+            path.append(state)
+            state = state.prev_state
         
+        maps = list()
+        for state in path:
+            self.steps_counter += 1
+            maps.append(self.Create_Map(state))
+
+        self.steps_counter -= 1
         return maps
 
     def Check_Direction(self, direction, state):
@@ -440,32 +435,40 @@ class Game:
         return State((nx, ny), boxes, state)
 
     def Check_Direction_Backwards(self, direction, state):
-        delta = {
+        dx, dy = {
             'up':    (0, -1),
             'down':  (0,  1),
             'left':  (-1, 0),
             'right': (1,  0)
-        }
-        dx, dy = delta[direction]
-        x, y = state.player
-        px, py = x - dx, y - dy
-        bx, by = x + dx, y + dy
+        }[direction]
 
+        x, y = state.player
+        bx, by = x + dx, y + dy 
+        px, py = x - dx, y - dy 
+        states = list()
+
+        if not (0 <= bx < self.map_cols and 0 <= by < self.map_rows):
+            return states
         if not (0 <= px < self.map_cols and 0 <= py < self.map_rows):
-            return None
+            return states
 
         if self.map[py][px] == '#':
-            return None
+            return states
 
         boxes = set(state.boxes)
+        
         if (px, py) in boxes:
-            return None
+            return states
 
         if (bx, by) in boxes:
+            states.append(State((px, py), boxes, state))
             boxes.remove((bx, by))
             boxes.add((x, y))
-        
-        return State((px, py), boxes, state)
+            states.append(State((px, py), boxes, state))
+            return states
+
+        states.append(State((px, py), boxes, state))
+        return states
 
     def Create_Map(self, state):
         map = [list(row) for row in self.map]
