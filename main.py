@@ -1,6 +1,9 @@
 import pygame
 import os
-from queue import Queue, LifoQueue
+from queue import Queue, LifoQueue, PriorityQueue
+from itertools import count
+from scipy.optimize import linear_sum_assignment
+import numpy as np
 
 class State:
     def __init__(self, player_pos, boxes, prev_state = None, depth = 0):
@@ -40,7 +43,8 @@ class Game:
         self.selected_level = None
         self.level_index = 0
 
-        self.algorithms = ['depth-first search', 'iterative depth-first search', 'breadth-first search', 'bidirectional search']
+        self.algorithms = ['depth-first search', 'iterative depth-first search', 'breadth-first search', 'bidirectional search',
+                            'A*']
         self.algorithm_index = 0
 
         self.iteration_count = 0
@@ -48,6 +52,8 @@ class Game:
         self.O_end_node_count = 0
         self.max_node_count = 0
         self.steps_counter = 0
+
+        self.h2_distances = None
 
         self.clock = pygame.time.Clock()
         pygame.display.flip()
@@ -95,6 +101,8 @@ class Game:
                             self.maps = self.Find_Solution(self.selected_level, 'queue')
                         case 'bidirectional search':
                             self.maps = self.Bidirectional_Search(self.selected_level)
+                        case "A*":
+                            self.maps = self.A_Star(self.selected_level)
                     if self.maps == None:
                         self.status = 'error'
                     else:
@@ -119,7 +127,7 @@ class Game:
             pygame.display.flip()
             self.clock.tick(60)
 
-    def Find_Solution(self, level_name, structure_type):
+    def Create_States(self, level_name):
         map_file = open('Levels/' + level_name, 'r') 
         start_map = map_file.read().split(sep='\n')
         map_file.close()
@@ -163,6 +171,11 @@ class Game:
                 elif final_map[y][x] == '+':
                     final_boxes.append((x, y))
         final_state = State(final_player, final_boxes)
+
+        return (start_state, final_state)
+
+    def Find_Solution(self, level_name, structure_type):
+        start_state, final_state = self.Create_States(level_name)
 
         match structure_type:
             case 'stack':
@@ -201,49 +214,7 @@ class Game:
         return None
 
     def DFS_Iterative(self, level_name):
-        map_file = open('Levels/' + level_name, 'r') 
-        start_map = map_file.read().split(sep='\n')
-        map_file.close()
-        self.map_rows = len(start_map)
-        self.map_cols = len(start_map[0])
-        for i in range(self.map_rows):
-            start_map[i] = list(start_map[i])
-
-        player = None
-        boxes = list()
-        self.map.clear()
-        for y in range(self.map_rows):
-            row = list()
-            for x in range(self.map_cols):
-                if start_map[y][x] == '@':
-                    player = (x, y)
-                    row.append('.')
-                elif start_map[y][x] == '*':
-                    player = (x, y)
-                    row.append('X')
-                elif start_map[y][x] == 'B':
-                    boxes.append((x, y))
-                    row.append('.')
-                elif start_map[y][x] == '+':
-                    boxes.append((x, y))
-                    row.append('X')
-                else:
-                    row.append(start_map[y][x])
-            self.map.append(row)
-        start_state = State(player, boxes)
-        
-        final_state_file = open('Levels/Final States/' + level_name, 'r')
-        final_map = final_state_file.read().split(sep='\n')
-        final_state_file.close()
-        final_player = None
-        final_boxes = list()
-        for y in range(self.map_rows):
-            for x in range(self.map_cols):
-                if final_map[y][x] == '@':
-                    final_player = (x, y)
-                elif final_map[y][x] == '+':
-                    final_boxes.append((x, y))
-        final_state = State(final_player, final_boxes)
+        start_state, final_state = self.Create_States(level_name)
 
         directions = ['up', 'down', 'right', 'left']
         O = LifoQueue()
@@ -287,54 +258,11 @@ class Game:
         return None
 
     def Bidirectional_Search(self, level_name):
-        map_file = open('Levels/' + level_name, 'r') 
-        start_map = map_file.read().split(sep='\n')
-        map_file.close()
-        self.map_rows = len(start_map)
-        self.map_cols = len(start_map[0])
-        for i in range(self.map_rows):
-            start_map[i] = list(start_map[i])
-
-        player = None
-        boxes = list()
-        self.map.clear()
-        for y in range(self.map_rows):
-            row = list()
-            for x in range(self.map_cols):
-                if start_map[y][x] == '@':
-                    player = (x, y)
-                    row.append('.')
-                elif start_map[y][x] == '*':
-                    player = (x, y)
-                    row.append('X')
-                elif start_map[y][x] == 'B':
-                    boxes.append((x, y))
-                    row.append('.')
-                elif start_map[y][x] == '+':
-                    boxes.append((x, y))
-                    row.append('X')
-                else:
-                    row.append(start_map[y][x])
-            self.map.append(row)
-        start_state = State(player, boxes)
+        start_state, final_state = self.Create_States(level_name)
 
         O_start = Queue()
         O_start.put(start_state)
         C_start = {start_state}
-        
-
-        final_state_file = open('Levels/Final States/' + level_name, 'r')
-        final_map = final_state_file.read().split(sep='\n')
-        final_state_file.close()
-        final_player = None
-        final_boxes = list()
-        for y in range(self.map_rows):
-            for x in range(self.map_cols):
-                if final_map[y][x] == '@':
-                    final_player = (x, y)
-                elif final_map[y][x] == '+':
-                    final_boxes.append((x, y))
-        final_state = State(final_player, final_boxes)
 
         O_final = Queue()
         O_final.put(final_state)
@@ -383,6 +311,121 @@ class Game:
                             self.O_max_node_count = max(self.O_max_node_count, O_size)
         
         return None
+
+    def A_Star(self, level_name):
+        start_state, final_state = self.Create_States(level_name)
+
+        goals = list()
+        for y in range(self.map_rows):
+            for x in range(self.map_cols):
+                if self.map[y][x] == 'X':
+                    goals.append((x, y))
+
+
+        counter = count()
+        O = PriorityQueue()
+        h = max(self.H1(start_state, goals) ,self.H2(start_state, goals))
+        O.put((h, next(counter), start_state))
+        C = {start_state: h}
+        directions = ['up', 'down', 'right', 'left']
+
+        while not O.empty():
+            self.iteration_count += 1
+            state = O.get()[2]
+            if state == final_state:
+                self.h2_distances = None
+                self.O_end_node_count = O.qsize()
+                maps = list()
+                while state.prev_state != None:
+                    self.steps_counter += 1
+                    map = self.Create_Map(state)
+                    maps.append(map)
+                    state = state.prev_state
+                map = self.Create_Map(state)
+                maps.append(map)
+                return maps
+
+            for direction in directions:
+                new_state = self.Check_Direction(direction, state)
+                if new_state != None:
+                    new_state.depth = state.depth + 1
+                    f = new_state.depth + max(self.H1(new_state, goals) ,self.H2(new_state, goals))
+                    if not new_state in C or f < C[new_state]:
+                        O.put((f, next(counter), new_state))
+                        C[new_state] = f
+                        O_size = O.qsize()
+                        self.max_node_count = max(self.max_node_count, len(C) + O_size)
+                        self.O_max_node_count = max(self.O_max_node_count, O_size)
+                        
+        return None
+        
+
+    def Is_Wall_Or_Box(self, x, y, boxes):
+        if not (0 <= x < self.map_cols and 0 <= y < self.map_rows):
+            return True
+        
+        if (x, y) in boxes:
+            return True
+
+        return self.map[y][x] == '#'
+
+    def H1(self, state, goals):
+        boxes = list(state.boxes)
+
+        for x, y in boxes:
+            if self.map[y][x] != 'X':
+                if ((self.Is_Wall_Or_Box(x + 1, y, boxes) or self.Is_Wall_Or_Box(x - 1, y, boxes)) and
+                    (self.Is_Wall_Or_Box(x, y + 1, boxes) or self.Is_Wall_Or_Box(x, y - 1, boxes))):
+                    return float('inf')
+
+        cost_matrix = np.zeros((len(boxes), len(goals)), dtype=int)
+        for i, (box_x, box_y) in enumerate(boxes):
+            for j, (goal_x, goal_y) in enumerate(goals):
+                cost_matrix[i, j] = abs(box_x - goal_x) + abs(box_y - goal_y)
+
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
+        total_cost = cost_matrix[row_ind, col_ind].sum()
+
+        return total_cost
+ 
+    def Calculate_Distance(self, goals, boxes):
+        distances = {}
+        queue = Queue()
+
+        for gx, gy in goals:
+            queue.put((gx, gy, 0))
+            distances[(gx, gy)] = 0
+
+        while not queue.empty():
+            x, y, d = queue.get()
+            for dx, dy in [(0,1), (0,-1), (1,0), (-1,0)]:
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < self.map_cols and 0 <= ny < self.map_rows):
+                    continue
+                if self.map[ny][nx] == '#' or (nx, ny in boxes):
+                    continue
+                if (nx, ny) not in distances:
+                    distances[(nx, ny)] = d + 1
+                    queue.put((nx, ny, d + 1))
+
+        return distances
+
+    def H2(self, state, goals):
+        boxes = list(state.boxes)
+        pattern_size = len(boxes) // 2 + 1
+        pattern_boxes = boxes[:pattern_size]
+
+        if self.h2_distances == None:
+            self.h2_distances = self.Calculate_Distance(goals, boxes)
+
+        total = 0
+        for (bx, by) in pattern_boxes:
+            if (bx, by) in self.h2_distances:
+                total += self.h2_distances[(bx, by)]
+            else:
+                return float('inf')
+
+        return total
 
     def Connect_Ways(self, state_start_end, state_final_end):
         path = list()
