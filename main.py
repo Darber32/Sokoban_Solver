@@ -43,8 +43,9 @@ class Game:
         self.selected_level = None
         self.level_index = 0
 
-        self.algorithms = ['depth-first search', 'iterative depth-first search', 'breadth-first search', 'bidirectional search',
-                            'A*']
+        # self.algorithms = ['depth-first search', 'iterative depth-first search', 'breadth-first search', 'bidirectional search',
+        #                     'A*']
+        self.algorithms = ['iterative depth-first search', 'bidirectional search', 'A*(h1)', 'A*(h2)']
         self.algorithm_index = 0
 
         self.iteration_count = 0
@@ -101,8 +102,10 @@ class Game:
                             self.maps = self.Find_Solution(self.selected_level, 'queue')
                         case 'bidirectional search':
                             self.maps = self.Bidirectional_Search(self.selected_level)
-                        case "A*":
-                            self.maps = self.A_Star(self.selected_level)
+                        case "A*(h1)":
+                            self.maps = self.A_Star(self.selected_level, 'h1')
+                        case "A*(h2)":
+                            self.maps = self.A_Star(self.selected_level, 'h2')
                     if self.maps == None:
                         self.status = 'error'
                     else:
@@ -312,7 +315,7 @@ class Game:
         
         return None
 
-    def A_Star(self, level_name):
+    def A_Star(self, level_name, h_number):
         start_state, final_state = self.Create_States(level_name)
 
         goals = list()
@@ -324,7 +327,12 @@ class Game:
 
         counter = count()
         O = PriorityQueue()
-        h = max(self.H1(start_state, goals) ,self.H2(start_state, goals))
+        match h_number:
+            case 'h1':
+                h = self.H1(start_state, goals)
+            case 'h2':
+                h = self.H2(start_state, goals)
+        # h = max(self.H1(start_state, goals) ,self.H2(start_state, goals))
         O.put((h, next(counter), start_state))
         C = {start_state: h}
         directions = ['up', 'down', 'right', 'left']
@@ -349,7 +357,12 @@ class Game:
                 new_state = self.Check_Direction(direction, state)
                 if new_state != None:
                     new_state.depth = state.depth + 1
-                    f = new_state.depth + max(self.H1(new_state, goals) ,self.H2(new_state, goals))
+                    match h_number:
+                        case 'h1':
+                            f = new_state.depth + self.H1(new_state, goals)
+                        case 'h2':
+                            f = new_state.depth + self.H2(new_state, goals)
+                    # f = new_state.depth + max(self.H1(new_state, goals), self.H2(new_state, goals))
                     if not new_state in C or f < C[new_state]:
                         O.put((f, next(counter), new_state))
                         C[new_state] = f
@@ -360,35 +373,36 @@ class Game:
         return None
         
 
-    def Is_Wall_Or_Box(self, x, y, boxes):
+    def Is_Wall(self, x, y, boxes):
         if not (0 <= x < self.map_cols and 0 <= y < self.map_rows):
-            return True
-        
-        if (x, y) in boxes:
             return True
 
         return self.map[y][x] == '#'
 
     def H1(self, state, goals):
         boxes = list(state.boxes)
+        player_x, player_y = state.player
+        min_player_way = 10000
 
         for x, y in boxes:
             if self.map[y][x] != 'X':
-                if ((self.Is_Wall_Or_Box(x + 1, y, boxes) or self.Is_Wall_Or_Box(x - 1, y, boxes)) and
-                    (self.Is_Wall_Or_Box(x, y + 1, boxes) or self.Is_Wall_Or_Box(x, y - 1, boxes))):
+                if ((self.Is_Wall(x + 1, y, boxes) or self.Is_Wall(x - 1, y, boxes)) and
+                    (self.Is_Wall(x, y + 1, boxes) or self.Is_Wall(x, y - 1, boxes))):
                     return float('inf')
 
         cost_matrix = np.zeros((len(boxes), len(goals)), dtype=int)
-        for i, (box_x, box_y) in enumerate(boxes):
-            for j, (goal_x, goal_y) in enumerate(goals):
-                cost_matrix[i, j] = abs(box_x - goal_x) + abs(box_y - goal_y)
+        for i, (bx, by) in enumerate(boxes):
+            min_player_way = min(min_player_way, abs(bx - player_x) + abs(by - player_y))
+            for j, (gx, gy) in enumerate(goals):
+                cost_matrix[i, j] = abs(bx - gx) + abs(by - gy)
 
         row_ind, col_ind = linear_sum_assignment(cost_matrix)
         total_cost = cost_matrix[row_ind, col_ind].sum()
-
+        
+        total_cost += min_player_way
         return total_cost
  
-    def Calculate_Distance(self, goals, boxes):
+    def Calculate_Distance(self, goals):
         distances = {}
         queue = Queue()
 
@@ -402,7 +416,7 @@ class Game:
                 nx, ny = x + dx, y + dy
                 if not (0 <= nx < self.map_cols and 0 <= ny < self.map_rows):
                     continue
-                if self.map[ny][nx] == '#' or (nx, ny in boxes):
+                if self.map[ny][nx] == '#':
                     continue
                 if (nx, ny) not in distances:
                     distances[(nx, ny)] = d + 1
@@ -415,17 +429,27 @@ class Game:
         pattern_size = len(boxes) // 2 + 1
         pattern_boxes = boxes[:pattern_size]
 
+        player_x, player_y = state.player
+        min_player_way = 10000
+
+        for x, y in boxes:
+            if self.map[y][x] != 'X':
+                if ((self.Is_Wall(x + 1, y, boxes) or self.Is_Wall(x - 1, y, boxes)) and
+                    (self.Is_Wall(x, y + 1, boxes) or self.Is_Wall(x, y - 1, boxes))):
+                    return float('inf')
+
         if self.h2_distances == None:
-            self.h2_distances = self.Calculate_Distance(goals, boxes)
+            self.h2_distances = self.Calculate_Distance(goals)
 
         total = 0
         for (bx, by) in pattern_boxes:
             if (bx, by) in self.h2_distances:
+                min_player_way = min(min_player_way, abs(bx - player_x) + abs(by - player_y))
                 total += self.h2_distances[(bx, by)]
             else:
                 return float('inf')
 
-        return total
+        return total + min_player_way
 
     def Connect_Ways(self, state_start_end, state_final_end):
         path = list()
