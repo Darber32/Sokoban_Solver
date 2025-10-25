@@ -4,6 +4,7 @@ from queue import Queue, LifoQueue, PriorityQueue
 from itertools import count
 from scipy.optimize import linear_sum_assignment
 import numpy as np
+import heapq
 
 class State:
     def __init__(self, player_pos, boxes, prev_state = None, depth = 0):
@@ -34,7 +35,7 @@ class Game:
         self.map_cols = 0
         self.map = list()
 
-        self.block_size = 60
+        self.block_size = 40
         self.font = pygame.font.SysFont("Arial", self.block_size)
         self.stats_font = pygame.font.SysFont("Arial", self.block_size // 2)
 
@@ -43,9 +44,8 @@ class Game:
         self.selected_level = None
         self.level_index = 0
 
-        # self.algorithms = ['depth-first search', 'iterative depth-first search', 'breadth-first search', 'bidirectional search',
-        #                     'A*']
-        self.algorithms = ['iterative depth-first search', 'bidirectional search', 'A*(h1)', 'A*(h2)']
+        self.algorithms = ['depth-first search', 'iterative depth-first search', 'breadth-first search', 'bidirectional search',
+                            'A*(h1)', 'A*(h2)', 'A*(h3)']
         self.algorithm_index = 0
 
         self.iteration_count = 0
@@ -106,6 +106,8 @@ class Game:
                             self.maps = self.A_Star(self.selected_level, 'h1')
                         case "A*(h2)":
                             self.maps = self.A_Star(self.selected_level, 'h2')
+                        case "A*(h3)":
+                            self.maps = self.A_Star(self.selected_level, 'h3')
                     if self.maps == None:
                         self.status = 'error'
                     else:
@@ -116,7 +118,7 @@ class Game:
                     self.Draw_Map(map)
                     if len(self.maps) == 0:
                         self.status = 'stop'
-                    pygame.time.delay(200)
+                    pygame.time.delay(100)
 
                 case 'stop':
                     pass
@@ -324,22 +326,35 @@ class Game:
                 if self.map[y][x] == 'X':
                     goals.append((x, y))
 
-
         counter = count()
+        c = 0
         O = PriorityQueue()
         match h_number:
             case 'h1':
                 h = self.H1(start_state, goals)
             case 'h2':
                 h = self.H2(start_state, goals)
+            case 'h3':
+                h = self.H3(start_state, goals)
         # h = max(self.H1(start_state, goals) ,self.H2(start_state, goals))
         O.put((h, next(counter), start_state))
+        open_states = {start_state: h}
         C = {start_state: h}
         directions = ['up', 'down', 'right', 'left']
 
         while not O.empty():
+            state_f, _, state = O.get()
+            if state not in open_states:
+                continue
+            open_states.pop(state)
             self.iteration_count += 1
-            state = O.get()[2]
+            if c % 10000 == 0:
+                print(f'Игрок: {state.player}')
+                print(f'Коробки: {state.boxes}')
+                print(f'Цели: {goals}')
+                print(f'f: {state_f}')
+                print(f'Итерация: {self.iteration_count}')
+            c += 1
             if state == final_state:
                 self.h2_distances = None
                 self.O_end_node_count = O.qsize()
@@ -362,18 +377,20 @@ class Game:
                             f = new_state.depth + self.H1(new_state, goals)
                         case 'h2':
                             f = new_state.depth + self.H2(new_state, goals)
+                        case 'h3':
+                            f = new_state.depth + self.H3(new_state, goals)
                     # f = new_state.depth + max(self.H1(new_state, goals), self.H2(new_state, goals))
                     if not new_state in C or f < C[new_state]:
                         O.put((f, next(counter), new_state))
+                        open_states[new_state] = f
                         C[new_state] = f
                         O_size = O.qsize()
                         self.max_node_count = max(self.max_node_count, len(C) + O_size)
                         self.O_max_node_count = max(self.O_max_node_count, O_size)
                         
         return None
-        
 
-    def Is_Wall(self, x, y, boxes):
+    def Is_Wall(self, x, y):
         if not (0 <= x < self.map_cols and 0 <= y < self.map_rows):
             return True
 
@@ -386,13 +403,13 @@ class Game:
 
         for x, y in boxes:
             if self.map[y][x] != 'X':
-                if ((self.Is_Wall(x + 1, y, boxes) or self.Is_Wall(x - 1, y, boxes)) and
-                    (self.Is_Wall(x, y + 1, boxes) or self.Is_Wall(x, y - 1, boxes))):
+                if ((self.Is_Wall(x + 1, y) or self.Is_Wall(x - 1, y)) and
+                    (self.Is_Wall(x, y + 1) or self.Is_Wall(x, y - 1))):
                     return float('inf')
 
         cost_matrix = np.zeros((len(boxes), len(goals)), dtype=int)
         for i, (bx, by) in enumerate(boxes):
-            min_player_way = min(min_player_way, abs(bx - player_x) + abs(by - player_y))
+            min_player_way = min(min_player_way, abs(bx - player_x) + abs(by - player_y) - 1)
             for j, (gx, gy) in enumerate(goals):
                 cost_matrix[i, j] = abs(bx - gx) + abs(by - gy)
 
@@ -433,23 +450,42 @@ class Game:
         min_player_way = 10000
 
         for x, y in boxes:
+            min_player_way = min(min_player_way, abs(x - player_x) + abs(y - player_y) - 1)
             if self.map[y][x] != 'X':
-                if ((self.Is_Wall(x + 1, y, boxes) or self.Is_Wall(x - 1, y, boxes)) and
-                    (self.Is_Wall(x, y + 1, boxes) or self.Is_Wall(x, y - 1, boxes))):
+                if ((self.Is_Wall(x + 1, y) or self.Is_Wall(x - 1, y)) and
+                    (self.Is_Wall(x, y + 1) or self.Is_Wall(x, y - 1))):
                     return float('inf')
 
         if self.h2_distances == None:
             self.h2_distances = self.Calculate_Distance(goals)
 
         total = 0
-        for (bx, by) in pattern_boxes:
+        for bx, by in pattern_boxes:
             if (bx, by) in self.h2_distances:
-                min_player_way = min(min_player_way, abs(bx - player_x) + abs(by - player_y))
                 total += self.h2_distances[(bx, by)]
             else:
                 return float('inf')
 
         return total + min_player_way
+
+    def H3(self, state, goals):
+        boxes = list(state.boxes)
+
+        for x, y in boxes:
+            if self.map[y][x] != 'X':
+                if ((self.Is_Wall(x + 1, y) or self.Is_Wall(x - 1, y)) and
+                    (self.Is_Wall(x, y + 1) or self.Is_Wall(x, y - 1))):
+                    return float('inf')
+
+        cost_matrix = np.zeros((len(boxes), len(goals)), dtype=int)
+        for i, (bx, by) in enumerate(boxes):
+            for j, (gx, gy) in enumerate(goals):
+                cost_matrix[i, j] = abs(bx - gx) + abs(by - gy)
+
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
+        total_cost = cost_matrix[row_ind, col_ind].sum()
+        
+        return total_cost
 
     def Connect_Ways(self, state_start_end, state_final_end):
         path = list()
@@ -631,6 +667,84 @@ class Game:
         error_rect = error.get_rect(center=(center_x, center_y))
         self.surface.blit(error, error_rect)
 
+
+    def A_Star_New(self, level_name, h_number):
+        start_state, final_state = self.Create_States(level_name)
+
+        goals = list()
+        for y in range(self.map_rows):
+            for x in range(self.map_cols):
+                if self.map[y][x] == 'X':
+                    goals.append((x, y))
+
+
+        match h_number:
+            case 'h1':
+                h = self.H1(start_state, goals)
+            case 'h2':
+                h = self.H2(start_state, goals)
+
+        counter = count()
+        O = [(h, next(counter), start_state)]
+        heapq.heapify(O)
+        open_states = {start_state: h}
+        C = {start_state: h}
+        directions = ['up', 'down', 'right', 'left']
+
+        while len(O) != 0:
+            self.iteration_count += 1
+            state_f, _, state = heapq.heappop(O)
+            open_states.pop(state)
+            C[state] = state_f
+            if self.iteration_count % 10000 == 1:
+                print(f'Игрок: {state.player}')
+                print(f'Коробки: {state.boxes}')
+                print(f'Цели: {goals}')
+                print(f'f: {state_f}')
+                print(f'Итерация: {self.iteration_count}')
+
+            if state == final_state:
+                self.h2_distances = None
+                self.O_end_node_count = len(O)
+                maps = list()
+                while state.prev_state != None:
+                    self.steps_counter += 1
+                    map = self.Create_Map(state)
+                    maps.append(map)
+                    state = state.prev_state
+                map = self.Create_Map(state)
+                maps.append(map)
+                return maps
+
+            for direction in directions:
+                new_state = self.Check_Direction(direction, state)
+                if new_state != None:
+                    new_state.depth = state.depth + 1
+                    match h_number:
+                        case 'h1':
+                            f = new_state.depth + self.H1(new_state, goals)
+                        case 'h2':
+                            f = new_state.depth + self.H2(new_state, goals)
+                    if new_state not in open_states and new_state not in C:
+                        heapq.heappush(O, (f, next(counter), new_state))
+                        open_states[new_state] = f
+                    elif new_state in open_states and open_states[new_state] > f:
+                        len_o = len(O)
+                        for i in range(len_o):
+                            i_f, i_c, i_state = O[i]
+                            if i_state == new_state:
+                                O[i] = (f, i_c, new_state)
+                                break
+                        open_states[new_state] = f
+                    elif new_state in C and C[new_state] > f:
+                        C.pop(new_state)
+                        heapq.heappush(O, (f, next(counter), new_state))
+                        open_states[new_state] = f
+                    O_size = len(O)
+                    self.max_node_count = max(self.max_node_count, len(C) + O_size)
+                    self.O_max_node_count = max(self.O_max_node_count, O_size)
+                        
+        return None
 
 game = Game()
 game.Start()
