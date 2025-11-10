@@ -44,8 +44,7 @@ class Game:
         self.selected_level = None
         self.level_index = 0
 
-        self.algorithms = ['depth-first search', 'iterative depth-first search', 'breadth-first search', 'bidirectional search',
-                            'A*(h1)', 'A*(h2)', 'A*(h3)']
+        self.algorithms = ['breadth-first search', 'iterative depth-first search', 'bidirectional search', 'A*(h2)', 'A*(h3)']
         self.algorithm_index = 0
 
         self.iteration_count = 0
@@ -118,7 +117,7 @@ class Game:
                     self.Draw_Map(map)
                     if len(self.maps) == 0:
                         self.status = 'stop'
-                    pygame.time.delay(100)
+                    pygame.time.delay(10)
 
                 case 'stop':
                     pass
@@ -327,7 +326,6 @@ class Game:
                     goals.append((x, y))
 
         counter = count()
-        c = 0
         O = PriorityQueue()
         match h_number:
             case 'h1':
@@ -348,13 +346,6 @@ class Game:
                 continue
             open_states.pop(state)
             self.iteration_count += 1
-            if c % 10000 == 0:
-                print(f'Игрок: {state.player}')
-                print(f'Коробки: {state.boxes}')
-                print(f'Цели: {goals}')
-                print(f'f: {state_f}')
-                print(f'Итерация: {self.iteration_count}')
-            c += 1
             if state == final_state:
                 self.h2_distances = None
                 self.O_end_node_count = O.qsize()
